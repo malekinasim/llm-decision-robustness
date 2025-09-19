@@ -7,7 +7,7 @@ SRC  = os.path.join(ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from util import load_model_and_tokenizer, get_device
+from src.llm_decision.util import load_model_and_tokenizer, get_device
 
 COUNTRIES = [
     ("France"," Paris"," London"," Berlin"),
