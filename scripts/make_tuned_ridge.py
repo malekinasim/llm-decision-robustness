@@ -2,14 +2,15 @@
 import os, sys, json, argparse, random
 from typing import List
 
-# --- Make sure we can import from src/ ---
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC  = os.path.join(ROOT, "src")
-if SRC not in sys.path:
-    sys.path.insert(0, SRC)
-
 import torch
-from util import load_model_and_tokenizer, get_device
+import sys, os
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+from src.util import load_model_and_tokenizer, get_device
+# --- Make sure we can import from src/ ---
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(ROOT))
 
 try:
     from tqdm import tqdm
@@ -22,7 +23,7 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Build diagonal tuned-lens (gamma,beta per layer) via ridge to match x_L."
     )
-    p.add_argument("--model", type=str, default="gpt2-medium",
+    p.add_argument("--model", type=str, default="EleutherAI/gpt-neo-125M",
                    help="HF model name (e.g., gpt2, gpt2-medium)")
     p.add_argument("--prompts", type=str, default=os.path.join(ROOT, "data", "prompts_for_tuned.json"),
                    help="JSON file: list of objects with key 'prompt'")
@@ -41,6 +42,7 @@ def parse_args():
                    help="Ridge strength (lambda)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--debug", action="store_true")
+    p.add_argument("--remote", default=False)
     return p.parse_args()
 
 @torch.no_grad()
@@ -152,7 +154,7 @@ def main():
 
     # load model
     device = get_device()
-    model, tokenizer = load_model_and_tokenizer(args.model, device)
+    model, tokenizer = load_model_and_tokenizer(args.model, device,args.remote)
     model.config.output_hidden_states = True
 
     # load prompts
@@ -160,10 +162,10 @@ def main():
     if os.path.isfile(args.prompts):
         try:
             data = json.load(open(args.prompts, "r", encoding="utf-8"))
-            # accept list of dicts with "prompt" or list of strings
+            # accept list of dicts with "question"n" or list of strings
             if isinstance(data, list):
-                if len(data) and isinstance(data[0], dict) and "prompt" in data[0]:
-                    texts = [d["prompt"] for d in data]
+                if len(data) and isinstance(data[0], dict) and "question" in data[0]:
+                    texts = [d["question"] for d in data]
                 elif len(data) and isinstance(data[0], str):
                     texts = data
         except Exception as e:
