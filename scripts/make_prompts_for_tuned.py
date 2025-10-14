@@ -58,5 +58,5 @@ def gen_templates(n_each=200, seed=0):
 if __name__ == "__main__":
     prompts = gen_templates(n_each=250, seed=0)  # ~3000 پرامپت
     with open("data\prompts_for_tuned.json","w",encoding="utf-8") as f:
-        json.dump([{"prompt":p} for p in prompts], f, ensure_ascii=False, indent=2)
+        json.dump([{"question":p} for p in prompts], f, ensure_ascii=False, indent=2)
     print("Saved prompts_for_tuned.json with", len(prompts), "items")
