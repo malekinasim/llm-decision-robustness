@@ -11,7 +11,6 @@ from pathlib import Path
 import os
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-
 def get_device():
     if torch.cuda.is_available():
         return torch.device("cuda")
@@ -23,70 +22,91 @@ def get_device():
     return torch.device("cpu")
 
 def _local_dir_for(model_name: str) -> Path:
-    """Map a repo id to local snapshot path."""
-    return Path("models") / model_name.replace("/", "__")
+    # همان لاجیک خودت؛ اینجا نمونهٔ ساده:
+    root = Path("models")
+    return root / model_name.replace("/", "__")
 
 def _to_bool(x):
-    if isinstance(x, bool):
-        return x
-    if isinstance(x, str):
-        return x.strip().lower() in {"1", "true", "yes", "y"}
-    return bool(x)
+    if isinstance(x, bool): return x
+    if x is None: return False
+    return str(x).lower() in {"1","true","yes","y"}
 
-def load_model_and_tokenizer(model_name: str, device=None, torch_dtype=None, remote=False):
+def _has_local_snapshot(ldir: Path) -> bool:
+    # robust: safetensors یا bin، با یا بدون index
+    has_cfg = (ldir / "config.json").exists()
+    has_st  = any(ldir.glob("*.safetensors"))
+    has_bin = any(ldir.glob("pytorch_model*.bin"))
+    return has_cfg and (has_st or has_bin)
+
+def load_model_and_tokenizer(
+    model_name: str,
+    device=None,
+    compute_dtype: str = "auto",   # "auto" | "float32" | "float16" | "bf16"
+    remote: bool = False,
+    trust_remote_code: bool = True
+):
     """
-    remote=True  -> حتماً از اینترنت (HF) بگیر
-    remote=False -> اگر فولدر محلی موجود بود از لوکال، وگرنه از HF
+    remote=True  -> همیشه از HF
+    remote=False -> اگر اسنپ‌شات لوکال بود همان، وگرنه HF
+    compute_dtype کنترل دقت محاسبه (FP32/FP16/BF16) را مشخص می‌کند.
     """
     # پایداری بیشتر روی ویندوز
     os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
 
     remote = _to_bool(remote)
     local_dir = _local_dir_for(model_name)
-    use_local = (local_dir / "config.json").exists() and (local_dir / "model.safetensors").exists()
+    use_local = _has_local_snapshot(local_dir)
 
-    # منبع لود
     src = model_name if (remote or not use_local) else str(local_dir)
     from_local = (src == str(local_dir))
 
-    # انتخاب dtype امن: CPU=fp32 ، GPU=bfloat16 (یا fp16 اگر لازم بود)
-    if torch_dtype is None:
-        torch_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+    dtype_map = {
+        "auto": None,
+        "float32": torch.float32,
+        "float16": torch.float16,
+        "bf16": torch.bfloat16,
+    }
+    req_dtype = dtype_map.get(str(compute_dtype).lower(), None)
+
+    # اگر GPU دارید و BF16 خواستید اما کارت پشتیبانی نمی‌کند، به FP16 برگرد
+    has_cuda = torch.cuda.is_available()
+    if req_dtype is torch.bfloat16 and not (has_cuda and torch.cuda.is_bf16_supported()):
+        print("[warn] bf16 not supported on this GPU; falling back to float16")
+        req_dtype = torch.float16
 
     # tokenizer
     print(f"[load] tokenizer from {'local' if from_local else 'HF'}...")
     tok = AutoTokenizer.from_pretrained(
         src,
-        local_files_only=from_local,    # اگر از لوکال می‌خوانیم، آنلاین نشود
+        local_files_only=from_local,
         use_fast=True,
-        trust_remote_code=True          # برای خانواده Qwen/DeepSeek لازم است
+        trust_remote_code=trust_remote_code
     )
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
+        
+    tok.padding_side = "right"
 
     # model
     print(f"[load] model from {'local' if from_local else 'HF'}...")
-    has_cuda = torch.cuda.is_available()
-    # توجه: از `dtype=` به‌جای `torch_dtype=` استفاده می‌کنیم (هشدار رفع می‌شود)
-    mdl = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(
         src,
         local_files_only=from_local,
-        trust_remote_code=True,
-        dtype=torch_dtype,
-        device_map=("auto" if has_cuda else None),  # GPU اگر هست استفاده شود
-        low_cpu_mem_usage=True,                      # RAM کمتر هنگام لود
-        attn_implementation="eager",                 # پایدارتر روی ویندوز/عمومی
+        trust_remote_code=trust_remote_code,
+        torch_dtype=req_dtype,                 
+        device_map=("auto" if has_cuda else None),
+        low_cpu_mem_usage=True,
+        attn_implementation="eager",         
     )
 
-    # انتقال دستی فقط وقتی device صراحتاً داده شده
-    if device is not None and device.type == "cpu" and has_cuda:
-        # اگر کاربر خواسته CPU باشد ولی device_map=auto رفته GPU، برگردان روی CPU
-        mdl.to(device)
+    # اگر device صراحتاً داده شده، آن را اعمال کن
+    if device is not None:
+        model.to(device)
 
-    mdl.eval()
-    print(f"[ready] {mdl.__class__.__name__} | dtype={mdl.dtype} | src={'local' if from_local else 'HF'}")
-    return mdl, tok
-
+    model.eval()
+    eff_dtype = getattr(model, "dtype", None)
+    print(f"[ready] {model.__class__.__name__} | torch_dtype={eff_dtype} | src={'local' if from_local else 'HF'}")
+    return model, tok
 
 def split_train_test(items, test_ratio=0.3, seed=0):
     rng = random.Random(seed)

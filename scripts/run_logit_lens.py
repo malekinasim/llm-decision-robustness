@@ -145,7 +145,7 @@ def main():
     ensure_dirs(tables_dir, figs_dir)  # ✅ your helper:contentReference[oaicite:6]{index=6}
 
     # Load items
-    mcq_items, single_items = load_prompts_with_options(args.dataset, tok, require_single_token=True)
+    mcq_items, single_items = load_prompts_with_options(args.dataset, tok, require_single_token=Falses)
 
     # Tuned lens (optional)
     tuned = None

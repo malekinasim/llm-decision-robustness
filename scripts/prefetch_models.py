@@ -34,10 +34,10 @@ ALLOW_PATTERNS = [
 
 
 DEFAULT_MODELS = {
-    "gpt-neo-125m":           "EleutherAI/gpt-neo-125M",                 # tiny, always works
-    "tinyllama-1.1b-chat":    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",      # light chat model
-    "qwen2.5-1.5b-instruct":  "Qwen/Qwen2.5-1.5B-Instruct",              # strong small model
-    "phi-2-2.7b":             "microsoft/phi-2",                         # borderline on 8 GB
+    "gpt-neo-125m":"EleutherAI/gpt-neo-125M",                 # tiny, always works
+    "tinyllama-1.1b-chat":"TinyLlama/TinyLlama-1.1B-Chat-v1.0",      # light chat model
+    "qwen2.5-1.5b-instruct":"Qwen/Qwen2.5-1.5B-Instruct",              # strong small model
+    "phi-2-2.7b":"microsoft/phi-2",                         # borderline on 8 GB
 }
 
 def verify_local_model(local_dir: Path) -> bool:

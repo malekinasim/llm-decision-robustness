@@ -38,7 +38,7 @@ def load_prompts_from_json(path):
         raise ValueError("No prompts found in JSON.")
     return prompts, labels
 
-def load_prompts_with_options(path, tokenizer, require_single_token=True):
+def load_prompts_with_options(path, tokenizer, require_single_token=False):
     """
     Loads a mixed dataset:
       - MCQ items: have 'options' (and optional 'gold'), go to mcq_items

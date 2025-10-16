@@ -1,5 +1,23 @@
 import torch
 import numpy as np
+
+def     mass_mean_eval_per_layer_feature(Xtr_layers, ytr):
+    """Return dict: layer -> (w, b) using difference-of-means."""
+    W = {}
+    ytr = np.asarray(ytr).astype(int)
+    for li, X in Xtr_layers.items():
+        pos = X[ytr == 1]
+        neg = X[ytr == 0]
+        if len(pos) == 0 or len(neg) == 0:
+            # degenerate: no both classes; fall back to zeros
+            w = np.zeros(X.shape[1], dtype=np.float32); b = 0.0
+        else:
+            mu_pos = pos.mean(axis=0)
+            mu_neg = neg.mean(axis=0)
+            w = (mu_pos - mu_neg).astype(np.float32)
+            b = -0.5 * float(w @ (mu_pos + mu_neg))
+        W[li] = (w, b)
+    return W
 def mass_mean_fit_per_layer(train_items, model, tokenizer, get_layer_hiddens_fn, pos=-1):
     """
     Returns dict: layer_idx -> (w vector as torch.Tensor on CPU)
@@ -30,6 +48,34 @@ def mass_mean_fit_per_layer(train_items, model, tokenizer, get_layer_hiddens_fn,
         W[li] = w
     return W
 
+def acc_question(scores, y, qids):
+    """Accuracy@Question (MCQ). If qids is None, falls back to threshold @0."""
+    y = np.asarray(y).astype(int)
+    if qids is None:
+        yp = (scores >= 0.0).astype(int)
+        return float((yp == y).mean())
+    acc = []
+    uq = np.unique(qids)
+    for q in uq:
+        idx = (qids == q)
+        s_q, y_q = scores[idx], y[idx]
+        if s_q.size == 0: continue
+        acc.append(int(y_q[np.argmax(s_q)] == 1))
+    return float(np.mean(acc)) if acc else 0.0
+
+def mean_margin(scores, y, qids):
+    """Mean (gold - best wrong) margin per question (MCQ). If qids None, use class margins."""
+    y = np.asarray(y).astype(int)
+    if qids is None:
+        # simple binary margin (gold mean - wrong max)
+        return float(scores[y==1].mean() - (scores[y==0].max() if (y==0).any() else 0.0))
+    margins = []
+    for q in np.unique(qids):
+        idx = (qids == q)
+        s_q, y_q = scores[idx], y[idx]
+        if (y_q==1).sum()==1 and (y_q==0).sum()>=1:
+            margins.append(float(s_q[y_q==1][0] - np.max(s_q[y_q==0])))
+    return float(np.mean(margins)) if margins else np.nan
 def mass_mean_eval_per_layer(test_items, W, model, tokenizer, get_layer_hiddens_fn, pos=-1):
     """
     Given learned W per layer, returns:

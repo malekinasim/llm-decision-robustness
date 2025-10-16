@@ -104,7 +104,7 @@ def build_pairs_mcq_layers(model,tok,device,items):
 
 def build_pairs_single_layers(model,tok,device,items, negatives_per=2):
     X_layers, y = [], []
-    singles = [it for it in items if it.get("task","").lower() in {"single","singel"}]
+    singles = [it for it in items if it.get("task","").lower() in {"single","single"}]
     # Collect all the gold to make better negatives
     golds = [it["answer"] for it in singles if isinstance(it.get("answer"), str)]
     rng = np.random.default_rng(0)
@@ -135,9 +135,9 @@ def build_pairs_single(model, tok, device, items, negatives_per=2):
     """
     pairs = []
     for it in items:
-        # accept both 'single' and old 'singel'
+        # accept both 'single' and old 'single'
         task = (it.get("task") or "").lower()
-        if task not in {"single", "singel"}:
+        if task not in {"single", "single"}:
             continue
 
         prompt = str(it["question"])
@@ -202,10 +202,6 @@ def eval_binary_from_pairs(pairs, W, model, tokenizer, get_single_hiddens_fn, sk
         s = np.array(all_scores[li])
         yhat = (s >= 0).astype(int)
         per_layer_acc[li] = float((yhat == y).mean())
-    # pick best
-    best_layer, best_acc = None, -1.0
-    for li, acc in per_layer_acc.items():
-        if acc > best_acc:
-            best_layer, best_acc = li, acc
 
-    return per_layer_acc, best_layer, best_acc
+
+    return per_layer_acc

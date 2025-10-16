@@ -29,7 +29,7 @@ def is_single_token(tokenizer, s):
     ids = tokenizer.encode(s, add_special_tokens=False)
     return len(ids) == 1
 
-def build_prompt_items(tokenizer, n_math=400, seed=0,require_single_token=True):
+def build_prompt_items(tokenizer, n_math=400, seed=0,require_single_token=False):
     random.seed(seed)
     items = []
 

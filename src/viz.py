@@ -1,16 +1,26 @@
-# Layer-wise logit lens for MCQ and Single-token prompts (with optional Tuned Lens)
-from pathlib import Path
-import matplotlib.pyplot as plt
+# imports (یک‌بار کافی است)
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from sklearn.neighbors import KernelDensity
-from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, confusion_matrix, accuracy_score
-import numpy as np
-import matplotlib.pyplot as plt
+from sklearn.metrics import (
+    roc_curve, auc, precision_recall_curve,
+    average_precision_score, confusion_matrix, accuracy_score
+)
+
+# ==== Global palette (consistent colors) ====
+COLOR_POS     = "#1fb42b"  # Green  - y=1 (gold)
+COLOR_NEG     = "#ee5151"  # red- y=0 (wrong)
+COLOR_THR0    = "#5a5759"  # grey
+COLOR_THRSTAR = "#0f70b6"  # blue (می‌تونی سبز بگذاری اگر تمایز می‌خواهی)
+
+CMAP_CM_THR0    = "Blues"     # confusion @ thr=0
+CMAP_CM_THRSTAR = "Blues"   # confusion @ thr*
+
 
 def plot_margins(margins, path='fig', fname='margins_per_layer.png', title='Margins per Layer'):
     os.makedirs(path, exist_ok=True)
@@ -83,16 +93,6 @@ def plot_layer_acc_curve(per_layer_acc: dict, title: str, out_path: str):
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close()
-
-def plot_layer_acc_curve(per_layer_acc: dict, title: str, out_path: str):
-    layers = sorted(per_layer_acc.keys())
-    accs = [per_layer_acc[l] for l in layers]
-    plt.figure(figsize=(7, 4))
-    plt.plot(layers, accs, marker="o")
-    plt.xlabel("Layer"); plt.ylabel("Accuracy")
-    plt.title(title); plt.grid(alpha=0.25)
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    plt.tight_layout(); plt.savefig(out_path, dpi=150); plt.close()
 
 def plot_sep_pca_lda(X: np.ndarray, y: np.ndarray, title: str, out_path: str):
     """
@@ -173,31 +173,27 @@ def plot_confusion_matrix(cm, class_names, title, out_path):
     plt.tight_layout(); plt.savefig(out_path, dpi=150); plt.close()
 
 
-
-
 def plot_score_density(scores_pos: np.ndarray, scores_neg: np.ndarray, title: str, out_path: str):
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     plt.figure(figsize=(7,4))
 
-    # grid روی بازه‌ی score
     s_all = np.concatenate([scores_pos, scores_neg])
     lo, hi = np.percentile(s_all, [1, 99])
     grid = np.linspace(lo, hi, 400)[:, None]
 
-    # KDE برای هر کلاس (Gaussian kernel)
-    for s, label, color in [(scores_pos, "Positive/Gold", "C0"),
-                            (scores_neg, "Negative/Wrong", "C1")]:
+    for s, label, color in [
+        (scores_pos, "Positive/Gold", COLOR_POS),
+        (scores_neg, "Negative/Wrong", COLOR_NEG),
+    ]:
         if len(s) < 2:
             continue
         kde = KernelDensity(kernel='gaussian', bandwidth=(hi-lo)/30.0).fit(s[:, None])
         log_d = kde.score_samples(grid)
-        plt.plot(grid[:,0], np.exp(log_d), label=label)
+        plt.plot(grid[:,0], np.exp(log_d), label=label, color=color)
 
     plt.title(title); plt.xlabel("score s = w^T x + b"); plt.ylabel("density")
     plt.legend(); plt.grid(alpha=.2)
     plt.tight_layout(); plt.savefig(out_path, dpi=150); plt.close()
-
-
 
 def fit_standardizer_on_train(Xtr):
     mu = Xtr.mean(axis=0, keepdims=True)
@@ -218,21 +214,17 @@ def fit_pca2_on_train(Ztr):
 
 def transform_to_2d(Z, W2):
     return Z @ W2
-
 def plot_pca2_test(Z2_test, y_test, title, out_png):
-    import matplotlib.pyplot as plt
     plt.figure(figsize=(6,5))
-    for cls in np.unique(y_test):
+    for cls in [0,1]:
         pts = Z2_test[y_test == cls]
+        if pts.size == 0: continue
         lbl = "gold" if int(cls)==1 else "wrong"
-        plt.scatter(pts[:,0], pts[:,1], label=lbl, s=14)  # بدون تعیین رنگ
-    plt.title(title)
-    plt.xlabel("PC1")
-    plt.ylabel("PC2")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(out_png, dpi=180, bbox_inches="tight")
-    plt.close()
+        col = COLOR_POS if int(cls)==1 else COLOR_NEG
+        plt.scatter(pts[:,0], pts[:,1], label=lbl, s=14, color=col)
+    plt.title(title); plt.xlabel("PC1"); plt.ylabel("PC2")
+    plt.legend(); plt.tight_layout()
+    plt.savefig(out_png, dpi=180, bbox_inches="tight"); plt.close()
 
 def pca_train_fit_test_plot(Xtr, Xte, yte, title, out_png):
     mu, sigma = fit_standardizer_on_train(Xtr)
@@ -298,20 +290,22 @@ def plot_combined_diagnostics(
     lo, hi = np.percentile(all_scores, [1, 99]) if all_scores.size else (0, 1)
     lo, hi = (min(lo, 0.0), max(hi, 0.0))  # keep 0 visible
     bins_edges = np.linspace(lo, hi, bins)
-    ax_hist.hist(all_scores[y==1], bins=bins_edges, density=True, alpha=0.6, label="Positive (y=1)")
-    ax_hist.hist(all_scores[y==0], bins=bins_edges, density=True, alpha=0.6, label="Negative (y=0)")
+
+    
+    ax_hist.hist(all_scores[y==1], bins=bins_edges, density=True, alpha=0.6, label="Positive (y=1)",color=COLOR_POS)
+    ax_hist.hist(all_scores[y==0], bins=bins_edges, density=True, alpha=0.6, label="Negative (y=0)",color=COLOR_NEG)
     if show_kde:
         try:
             from scipy.stats import gaussian_kde
             xs = np.linspace(lo, hi, 400)
             if (y==1).sum() >= 2:
-                kde_pos = gaussian_kde(all_scores[y==1]); ax_hist.plot(xs, kde_pos(xs), lw=2, label="Pos KDE")
+                kde_pos = gaussian_kde(all_scores[y==1]); ax_hist.plot(xs, kde_pos(xs), lw=2, label="Pos KDE",color=COLOR_POS)
             if (y==0).sum() >= 2:
-                kde_neg = gaussian_kde(all_scores[y==0]); ax_hist.plot(xs, kde_neg(xs), lw=2, label="Neg KDE")
+                kde_neg = gaussian_kde(all_scores[y==0]); ax_hist.plot(xs, kde_neg(xs), lw=2, label="Neg KDE",color=COLOR_NEG)
         except Exception:
             pass
-    ax_hist.axvline(0.0, linestyle="--", alpha=0.7, label="thr=0")
-    ax_hist.axvline(thr_star, linestyle="-.", alpha=0.8, label=f"thr*={thr_star:.3f}")
+    ax_hist.axvline(0.0, color=COLOR_THR0, linestyle="--", alpha=0.7, label="thr=0")
+    ax_hist.axvline(thr_star, color=COLOR_THRSTAR, linestyle="-.", alpha=0.8, label=f"thr*={thr_star:.3f}")
     ax_hist.set_title("Score distribution")
     ax_hist.set_xlabel("score s = w^T x (+ b)"); ax_hist.set_ylabel("density")
     ax_hist.legend(fontsize='small')
@@ -330,20 +324,20 @@ def plot_combined_diagnostics(
     ax_pr.legend(loc="lower left", fontsize="small"); ax_pr.grid(alpha=.2)
 
     # 4) CM @ thr=0
-    im0 = ax_cm0.imshow(cm0, cmap="Blues")
+    im0 = ax_cm0.imshow(cm0, cmap=CMAP_CM_THR0)
     ax_cm0.set_title(f"Confusion @ thr=0 (ACC={acc0:.3f})")
     ax_cm0.set_xticks([0,1]); ax_cm0.set_yticks([0,1])
-    ax_cm0.set_xticklabels(["Pred 0","Pred 1"]); ax_cm0.set_yticklabels(["True 0","True 1"])
+    ax_cm0.set_xticklabels(["Pred wrong","Pred gold"]); ax_cm0.set_yticklabels(["Rean wrong","Real gold"])
     for (i,j), v in np.ndenumerate(cm0):
         ax_cm0.text(j, i, int(v), ha="center", va="center",
                     color=("white" if v > cm0.max()/2 else "black"))
     fig.colorbar(im0, ax=ax_cm0, fraction=0.046, pad=0.04)
 
     # 5) CM @ thr*
-    im1 = ax_cmstar.imshow(cm_star, cmap="Blues")
+    im1 = ax_cmstar.imshow(cm_star, cmap=CMAP_CM_THRSTAR)
     ax_cmstar.set_title(f"Confusion @ thr* (ACC={acc_star:.3f})")
     ax_cmstar.set_xticks([0,1]); ax_cmstar.set_yticks([0,1])
-    ax_cmstar.set_xticklabels(["Pred 0","Pred 1"]); ax_cmstar.set_yticklabels(["True 0","True 1"])
+    ax_cmstar.set_xticklabels(["Pred wrong","Pred gold"]); ax_cmstar.set_yticklabels(["Real wrong","Real gold"])
     for (i,j), v in np.ndenumerate(cm_star):
         ax_cmstar.text(j, i, int(v), ha="center", va="center",
                        color=("white" if v > cm_star.max()/2 else "black"))
@@ -367,7 +361,11 @@ def plot_combined_diagnostics(
         Z2 = Zte @ W2
         for cls in np.unique(pca_yte):
             pts = Z2[pca_yte == cls]
-            ax_pca.scatter(pts[:,0], pts[:,1], s=12, label=("gold" if int(cls)==1 else "wrong"))
+            if pts.size == 0:
+              continue
+            color = COLOR_POS if cls == 1 else COLOR_NEG
+            label = "gold" if cls == 1 else "wrong"
+            ax_pca.scatter(pts[:, 0], pts[:, 1], s=12, label=label, color=color)
         ax_pca.legend(fontsize='small', loc="best")
         ax_pca.text(0.02, 0.98, f"PC1={evr[0]:.2f}, PC2={evr[1]:.2f}",
                     transform=ax_pca.transAxes, ha="left", va="top", fontsize=9)
@@ -431,22 +429,26 @@ def plot_combined_diagnostics_old(
     lo, hi = np.percentile(all_scores, [1, 99]) if all_scores.size else (0, 1)
     lo, hi = (min(lo, 0.0), max(hi, 0.0))  # keep 0 visible
     bins_edges = np.linspace(lo, hi, bins)
-    ax_hist.hist(all_scores[y==1], bins=bins_edges, density=True, alpha=0.6, label="Positive (y=1)")
-    ax_hist.hist(all_scores[y==0], bins=bins_edges, density=True, alpha=0.6, label="Negative (y=0)")
+    ax_hist.hist(all_scores[y==1], bins=bins_edges, density=True, alpha=0.6, label="Positive (y=1)"
+                 ,Color=COLOR_POS)
+    ax_hist.hist(all_scores[y==0], bins=bins_edges, density=True, alpha=0.6, label="Negative (y=0)",
+                 Color=COLOR_NEG)
     # KDE (optional)
     if show_kde:
         try:
             from scipy.stats import gaussian_kde
             xs = np.linspace(lo, hi, 400)
             if (y==1).sum() >= 2:
-                kde_pos = gaussian_kde(all_scores[y==1]); ax_hist.plot(xs, kde_pos(xs), color='C0', lw=2, label="Pos KDE")
+                kde_pos = gaussian_kde(all_scores[y==1]); ax_hist.plot(xs, kde_pos(xs), color='C0', lw=2, label="Pos KDE"
+                ,Color=COLOR_POS)
             if (y==0).sum() >= 2:
-                kde_neg = gaussian_kde(all_scores[y==0]); ax_hist.plot(xs, kde_neg(xs), color='C1', lw=2, label="Neg KDE")
+                kde_neg = gaussian_kde(all_scores[y==0]); ax_hist.plot(xs, kde_neg(xs), color='C1', lw=2, label="Neg KDE",
+                                                                       Color=COLOR_NEG)
         except Exception:
             pass
     # mark thr=0 and thr*
-    ax_hist.axvline(0.0, color="k", linestyle="--", alpha=0.7, label="thr=0")
-    ax_hist.axvline(thr_star, color="red", linestyle="-.", alpha=0.8, label=f"thr*={thr_star:.3f}")
+    ax_hist.axvline(0.0, Color=COLOR_THR0, linestyle="--", alpha=0.7, label="thr=0")
+    ax_hist.axvline(thr_star, Color=COLOR_THRSTAR, linestyle="-.", alpha=0.8, label=f"thr*={thr_star:.3f}")
     ax_hist.set_title("Score distribution")
     ax_hist.set_xlabel("score s = w^T x (+ b)"); ax_hist.set_ylabel("density")
     ax_hist.legend(fontsize='small')
@@ -465,20 +467,22 @@ def plot_combined_diagnostics_old(
     ax_pr.legend(loc="lower left", fontsize="small"); ax_pr.grid(alpha=.2)
 
     # 4) CM @ thr=0
-    im0 = ax_cm0.imshow(cm0, cmap="Blues")
+    im0 = ax_cm0.imshow(cm0, cmap=CMAP_CM_THR0)
     ax_cm0.set_title(f"Confusion @ thr=0 (ACC={acc0:.3f})")
     ax_cm0.set_xticks([0,1]); ax_cm0.set_yticks([0,1])
-    ax_cm0.set_xticklabels(["Pred 0","Pred 1"]); ax_cm0.set_yticklabels(["True 0","True 1"])
+    ax_cm0.set_xticklabels(["Pred wrong","Pred gold"]);
+    ax_cm0.set_yticklabels(["Real wrong","Real gold"])
     for (i,j), v in np.ndenumerate(cm0):
         ax_cm0.text(j, i, int(v), ha="center", va="center",
                     color=("white" if v > cm0.max()/2 else "black"))
     fig.colorbar(im0, ax=ax_cm0, fraction=0.046, pad=0.04)
 
     # 5) CM @ thr*
-    im1 = ax_cmstar.imshow(cm_star, cmap="Blues")
+    im1 = ax_cmstar.imshow(cm_star, cmap=CMAP_CM_THRSTAR)
     ax_cmstar.set_title(f"Confusion @ thr* (ACC={acc_star:.3f})")
     ax_cmstar.set_xticks([0,1]); ax_cmstar.set_yticks([0,1])
-    ax_cmstar.set_xticklabels(["Pred 0","Pred 1"]); ax_cmstar.set_yticklabels(["True 0","True 1"])
+    ax_cmstar.set_xticklabels(["Pred wrong","Pred gold"]); 
+    ax_cmstar.set_yticklabels(["Real wrong","Real gold"])
     for (i,j), v in np.ndenumerate(cm_star):
         ax_cmstar.text(j, i, int(v), ha="center", va="center",
                        color=("white" if v > cm_star.max()/2 else "black"))

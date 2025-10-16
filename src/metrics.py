@@ -13,7 +13,7 @@ def fisher_score(scores: np.ndarray, y: np.ndarray) -> float:
     den = sp.var() + sn.var() + EPS
     return float(num / den)
 
-def roc_auc(scores: np.ndarray, y: np.ndarray) -> float:
+def roc_auc( y: np.ndarray,scores: np.ndarray) -> float:
     fpr, tpr, _ = roc_curve(y, scores)
     return float(auc(fpr, tpr))
 
